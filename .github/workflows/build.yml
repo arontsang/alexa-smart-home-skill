@@ -14,14 +14,11 @@ jobs:
       - name: Install cargo-lambda
         run: pip install cargo-lambda
 
-      - name: Install Zig
-        run: pip install ziglang
-
       - name: Build Lambda zip
-        run: cargo lambda build -r --output-format zip
+        run: cargo lambda build --release --arm64
 
       - name: Archive bootstrap.zip
         uses: actions/upload-artifact@v4
         with:
           name: bootstrap
-          path: target/lambda/alexa-smart-home-skill/bootstrap.zip
+          path: target/lambda/alexa-smart-home-skill/

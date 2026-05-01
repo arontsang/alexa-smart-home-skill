@@ -1,0 +1,27 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-lambda
+        uses: cargo-bins/cargo-binstall@main
+        with:
+          crate-name: cargo-lambda
+
+      - name: Build Lambda zip
+        run: cargo lambda build -r --output-format zip
+
+      - name: Archive bootstrap.zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap
+          path: target/lambda/alexa-smart-home-skill/bootstrap.zip

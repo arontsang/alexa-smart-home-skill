@@ -120,24 +120,33 @@ async fn build_reqwest_client(event: &LambdaEvent<Value>) -> Result<(reqwest::Cl
 }
 
 async fn handler(event: LambdaEvent<Value>) -> Result<Value> {
+    tracing::info!("Handler invoked");
+
     let (base_url, (client, token)) = tokio::try_join!(
         lookup_url(),
         build_reqwest_client(&event))?;
+
+    tracing::info!("Resolved base URL: {}", base_url);
 
     let mut request = client.post(base_url.as_str())
         .header("Authorization", format!("Bearer {}", token));
 
     for (name, value) in parse_custom_headers()? {
+        tracing::debug!("Adding custom header: {} = {}", name, value);
         request = request.header(&name, &value);
     }
 
+    tracing::debug!("Sending request to Home Assistant");
     let response = request
         .json(&event.payload)
         .send()
         .await?;
     let response_status = response.status();
+    tracing::info!("Home Assistant responded with status: {}", response_status);
 
     if !response_status.is_success() {
+        let body = response.text().await?;
+        tracing::warn!("Home Assistant error response ({}): {}", response_status, body);
         let val = ResponseData {
             event: EventData {
                 payload: PayloadData {
@@ -146,19 +155,32 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value> {
                         } else {
                             "INTERNAL_ERROR"
                         }).to_owned(),
-                    message: response.text().await?,
+                    message: body,
                 }
             }
         };
         return Ok(serde_json::to_value(&val)?);
     }
 
-    Ok(response.json::<Value>().await?)
+    let result = response.json::<Value>().await?;
+    tracing::debug!("Handler completed successfully");
+    Ok(result)
+}
+
+async fn logging_handler(event: LambdaEvent<Value>) -> Result<Value> {
+    match handler(event).await {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            tracing::error!("Handler error: {:?}", e);
+            Err(e)
+        }
+    }
 }
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Error> {
     tracing::init_default_subscriber();
+    tracing::info!("Lambda function starting up");
 
-    lambda_runtime::run(service_fn(handler)).await
+    lambda_runtime::run(service_fn(logging_handler)).await
 }

@@ -35,6 +35,24 @@ impl Timer {
     }
 }
 
+fn parse_custom_headers() -> Result<Vec<(String, String)>> {
+    let headers_str = match env::var("CUSTOM_HEADERS") {
+        Ok(v) => v,
+        Err(_) => return Ok(Vec::new()),
+    };
+    let mut headers = Vec::new();
+    for part in headers_str.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let (name, value) = part.split_once(':')
+            .ok_or_else(|| anyhow!("Invalid custom header format: '{}'. Expected 'Name: Value'", part))?;
+        headers.push((name.trim().to_string(), value.trim().to_string()));
+    }
+    Ok(headers)
+}
+
 async fn lookup_url() -> Result<Url> {
     let timer = Timer::start();
     let base_url = env::var("BASE_URL")
@@ -106,8 +124,14 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value> {
         lookup_url(),
         build_reqwest_client(&event))?;
 
-    let response = client.post(base_url.as_str())
-        .header("Authorization", format!("Bearer {}", token))
+    let mut request = client.post(base_url.as_str())
+        .header("Authorization", format!("Bearer {}", token));
+
+    for (name, value) in parse_custom_headers()? {
+        request = request.header(&name, &value);
+    }
+
+    let response = request
         .json(&event.payload)
         .send()
         .await?;
